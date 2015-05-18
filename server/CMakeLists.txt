@@ -17,17 +17,18 @@ ADD_DEFINITIONS(${rpkgs-glib_CFLAGS})
 INCLUDE_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/include
 	${rpkgs-dlog_INCLUDE_DIRS}
-	${rpkgs-capi_INCLUDE_DIRS}
+	${rpkgs-capi_INCLUDE_DIRS}	
 	)
 
 # Set sources
 ADD_EXECUTABLE(${PROJECT_NAME}
 	src/common.cpp
 	src/main.cpp
+	src/keyExchange.cpp
 )
 
 # Set LDFLAGS
-TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${rpkgs-dlog_LDFLAGS} ${rpkgs-capi_LDFLAGS} ${rpkgs-glib_LDFLAGS} "-ldl -lrt")
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${rpkgs-dlog_LDFLAGS} ${rpkgs-capi_LDFLAGS} ${rpkgs-glib_LDFLAGS} "-ldl -lrt -lgmp")
 
 # Set CFLAGS
 ADD_DEFINITIONS(-Wall -O3) 
