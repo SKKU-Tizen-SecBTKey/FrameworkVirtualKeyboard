@@ -16,7 +16,6 @@ BuildRequires:  pkgconfig(glib-2.0)
 BuildRequires:  pkgconfig(capi-network-bluetooth)
 BuildRequires:  pkgconfig(capi-system-info)
 BuildRequires:  pkgconfig(dlog)
-BuildRequires:  gmp-devel
 
 ## Description string that this package's human users can understand
 %description
@@ -39,6 +38,7 @@ make %{?jobs:-j%jobs}
 %install
 # make_install: equivalent to... make install DESTDIR="%(?buildroot)"
 %make_install
+
 
 # install license file
 mkdir -p %{buildroot}/usr/share/license

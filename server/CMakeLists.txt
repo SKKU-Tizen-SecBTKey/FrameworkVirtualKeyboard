@@ -16,19 +16,21 @@ ADD_DEFINITIONS(${rpkgs-glib_CFLAGS})
 # Set include directories
 INCLUDE_DIRECTORIES(
 	${CMAKE_CURRENT_SOURCE_DIR}/include
+	${CMAKE_CURRENT_SOURCE_DIR}/include/chilkat
 	${rpkgs-dlog_INCLUDE_DIRS}
 	${rpkgs-capi_INCLUDE_DIRS}	
 	)
 
 # Set sources
 ADD_EXECUTABLE(${PROJECT_NAME}
+	src/keyExchange.c
 	src/common.cpp
-	src/main.cpp
-	src/keyExchange.cpp
+	src/main.cpp	
 )
 
+
 # Set LDFLAGS
-TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${rpkgs-dlog_LDFLAGS} ${rpkgs-capi_LDFLAGS} ${rpkgs-glib_LDFLAGS} "-ldl -lrt -lgmp")
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${rpkgs-dlog_LDFLAGS} ${rpkgs-capi_LDFLAGS} ${rpkgs-glib_LDFLAGS} "-L./lib -lchilkat-9.5.0 -ldl -lrt -lresolv -lpthread")
 
 # Set CFLAGS
 ADD_DEFINITIONS(-Wall -O3) 
