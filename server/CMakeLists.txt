@@ -22,15 +22,21 @@ INCLUDE_DIRECTORIES(
 	)
 
 # Set sources
-ADD_EXECUTABLE(${PROJECT_NAME}
-	src/keyExchange.c
-	src/common.cpp
-	src/main.cpp	
+ADD_EXECUTABLE(
+	${PROJECT_NAME}
+	./src/keyExchange.c
+	./src/common.cpp
+	./src/main.cpp
 )
 
-
 # Set LDFLAGS
-TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${rpkgs-dlog_LDFLAGS} ${rpkgs-capi_LDFLAGS} ${rpkgs-glib_LDFLAGS} "-L./lib -lchilkat-9.5.0 -ldl -lrt -lresolv -lpthread")
+TARGET_LINK_LIBRARIES(
+	${PROJECT_NAME}
+	${rpkgs-dlog_LDFLAGS}
+	${rpkgs-capi_LDFLAGS}
+	${rpkgs-glib_LDFLAGS}
+	"-L./lib -lchilkat-9.5.0 -ldl -lrt -lresolv -lpthread"
+)
 
 # Set CFLAGS
 ADD_DEFINITIONS(-Wall -O3) 

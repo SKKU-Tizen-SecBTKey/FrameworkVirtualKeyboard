@@ -1,36 +1,43 @@
-
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <iostream>
 
 #include "common.h"
+#include <stdlib.h>
 #include <dlog.h>
 #include <glib.h>
 #include <bluetooth.h>
 
+#include "keyExchange.h"
+
 #undef LOG_TAG
-#define LOG_TAG "REMOTE_KEY_FW"
+#define LOG_TAG "Secured_Data_FW"
 
 static GMainLoop* gMainLoop = NULL;
 static bt_adapter_visibility_mode_e gVisibilityMode = BT_ADAPTER_VISIBILITY_MODE_NON_DISCOVERABLE;
 static int gSocketFd = -1;
+static int g_connected_socket_fd = -1;
 static bt_adapter_state_e gBtState = BT_ADAPTER_DISABLED;
 static const char uuid[] = "00001101-0000-1000-8000-00805F9B34FB";
 
+static char p[512];
+static char eBob[512];
+static int g;
+static char cipherText[512];
+
 // Lifecycle of this framework
-int rkf_initialize_bluetooth(void);
-int rkf_finalize_bluetooth_socket(void);
-int rkf_finalize_bluetooth(void);
-int rkf_listen_connection(void);
+int secured_fw_initialize_bluetooth(void);
+int secured_fw_finalize_bluetooth_socket(void);
+int secured_fw_finalize_bluetooth(void);
+int secured_fw_listen_connection(void);
 
 // Callbacks
-void rkf_received_data_cb(bt_socket_received_data_s *, void *);
-void rkf_socket_connection_state_changed_cb(int, bt_socket_connection_state_e, bt_socket_connection_s *, void *);
-void rkf_state_changed_cb(int, bt_adapter_state_e, void *);
+void secured_fw_received_data_cb(bt_socket_received_data_s *, void *);
+void secured_fw_socket_connection_state_changed_cb(int, bt_socket_connection_state_e, bt_socket_connection_s *, void *);
+void secured_fw_state_changed_cb(int, bt_adapter_state_e, void *);
 gboolean timeout_func_cb(gpointer);
 
-int rkf_initialize_bluetooth(const char *device_name) {
+int secured_fw_initialize_bluetooth(const char *device_name) {
 	// Initialize bluetooth and get adapter state
 	int ret;
 	ret = bt_initialize();
@@ -108,23 +115,22 @@ int rkf_initialize_bluetooth(const char *device_name) {
 		return -8;
 	}
 
-	ret = bt_socket_set_connection_state_changed_cb(rkf_socket_connection_state_changed_cb, NULL);
+	ret = bt_socket_set_connection_state_changed_cb(secured_fw_socket_connection_state_changed_cb, NULL);
 	if(ret != BT_ERROR_NONE) {
 		ALOGD("Unknown exception is occured in bt_socket_set_connection_state_changed_cb(): %x", ret);
 		return -9;
 	}
 
-	ret = bt_socket_set_data_received_cb(rkf_received_data_cb, NULL);
+	ret = bt_socket_set_data_received_cb(secured_fw_received_data_cb, NULL);
 	if(ret != BT_ERROR_NONE) {
 		ALOGD("Unknown exception is occured in bt_socket_set_data_received_cb(): %x", ret);
 		return -10;
 	}
 
-	
 	return 0;
 }
 
-int rkf_finalize_bluetooth_socket(void) {
+int secured_fw_finalize_bluetooth_socket(void) {
 	int ret;
 	sleep(5); // Wait for completing delivery
 	ret = bt_socket_destroy_rfcomm(gSocketFd);
@@ -138,12 +144,12 @@ int rkf_finalize_bluetooth_socket(void) {
 	return 0;
 }
 
-int rkf_finalize_bluetooth(void) {
+int secured_fw_finalize_bluetooth(void) {
 	bt_deinitialize();
 	return 0;
 }
 
-int rkf_listen_connection(void) {
+int secured_fw_listen_connection(void) {
 	// Success to get a socket
 	int ret = bt_socket_listen_and_accept_rfcomm(gSocketFd, 5);
 	switch(ret) {
@@ -173,29 +179,75 @@ int rkf_listen_connection(void) {
 int gReceiveCount = 0;
 
 // bt_socket_data_received_cb
-void rkf_received_data_cb(bt_socket_received_data_s *data, void *user_data) {
+void secured_fw_received_data_cb(bt_socket_received_data_s *data, void *user_data)
+{
 	static char buffer[1024];
-	char menu_string[]="menu";
-	char home_string[]="home";
-	char back_string[]="back";
+	int ret;
+  static int flag = 0;
 
 	strncpy(buffer, data->data, 1024);
 	buffer[data->data_size] = '\0';
-	ALOGD("RemoteKeyFW: received a data!(%d) %s", ++gReceiveCount, buffer);
 
-	// ACTION!
-	if(strncmp(buffer, menu_string, strlen(menu_string)) == 0) {
-		system("/bin/echo 1 > /sys/bus/platform/devices/homekey/coordinates");
-	} else if(strncmp(buffer, home_string, strlen(home_string)) == 0) {
-		system("/bin/echo 11 > /sys/bus/platform/devices/homekey/coordinates");
-	} else if(strncmp(buffer, back_string, strlen(back_string)) == 0) {
-		system("/bin/echo 111 > /sys/bus/platform/devices/homekey/coordinates");
-	}
+  // p
+  if (flag ==0) {
+    memset(&p[0], 0x00, sizeof(p));
+    strncpy(p, buffer, data->data_size);
+    ALOGD("Received p:");
+    ALOGD("%s", p);
+  }
 
+  // g
+  else if (flag == 1) {
+    g = buffer[0] - '0';
+    ALOGD("Received g: %d", g);
+  }
+
+  // eBob
+  else if (flag == 2) {
+    const char* eAlice;
+    memset(&eBob[0], 0x00, sizeof(eBob));
+    strncpy(eBob, buffer, data->data_size);
+    ALOGD("Received eBob:");
+    ALOGD("%s", eBob);
+    
+    secure_key_exchange(p, g);
+    eAlice = secure_find_key(eBob);
+    ALOGD("Sent eAlice:");
+    ALOGD("%s", eAlice);
+    ret = bt_socket_send_data(g_connected_socket_fd, eAlice, strlen(eAlice));
+  	if (ret != BT_ERROR_NONE) {
+         ALOGD("[bt_socket_send_data] %d", ret);
+    }
+    secure_aes_cbc_init();
+  }
+
+  // CipherText
+  else if (flag == 3) {
+    const char* plainText;
+    memset(&cipherText[0], 0x00, sizeof(cipherText));
+    strncpy(cipherText, buffer, data->data_size);
+    ALOGD("Received cipherText:");
+    ALOGD("%s", cipherText);
+    plainText = secure_aes_cbc_decrypt(cipherText);
+    ALOGD("Decrypted PlainText:");
+    ALOGD("%s", plainText);
+
+  	if(plainText[0] == '1') {
+  		system("/bin/echo 1 > /sys/bus/platform/devices/homekey/coordinates");
+  	} else if(plainText[0] == '2') {
+  		system("/bin/echo 11 > /sys/bus/platform/devices/homekey/coordinates");
+  	} else if(plainText[0] == '3') {
+  		system("/bin/echo 111 > /sys/bus/platform/devices/homekey/coordinates");
+  	}
+    secure_aes_cbc_dispose();
+  }
+
+  if (flag != 3) flag++;
+  else flag = 0;
 }
 
 // bt_socket_connection_state_changed_cb
-void rkf_socket_connection_state_changed_cb(int result, bt_socket_connection_state_e connection_state_event, bt_socket_connection_s *connection, void *user_data) {
+void secured_fw_socket_connection_state_changed_cb(int result, bt_socket_connection_state_e connection_state_event, bt_socket_connection_s *connection, void *user_data) {
 	if(result == BT_ERROR_NONE) {
 		ALOGD("RemoteKeyFW: connection state changed (BT_ERROR_NONE)");
 	} else {
@@ -204,13 +256,16 @@ void rkf_socket_connection_state_changed_cb(int result, bt_socket_connection_sta
 
 	if(connection_state_event == BT_SOCKET_CONNECTED) {
 		ALOGD("RemoteKeyFW: connected");
+		if (connection != NULL) {
+			g_connected_socket_fd = connection->socket_fd;
+		}
 	} else if(connection_state_event == BT_SOCKET_DISCONNECTED) {
 		ALOGD("RemoteKeyFW: disconnected");
 		g_main_loop_quit(gMainLoop);
 	}
 }
 
-void rkf_state_changed_cb(int result, bt_adapter_state_e adapter_state, void *user_data) {
+void secured_fw_state_changed_cb(int result, bt_adapter_state_e adapter_state, void *user_data) {
 	if(adapter_state == BT_ADAPTER_ENABLED) {
 		if(result == BT_ERROR_NONE) {
 			ALOGD("RemoteKeyFW: bluetooth was enabled successfully.");
@@ -254,7 +309,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Initialize bluetooth
-	error = rkf_initialize_bluetooth(device_name);
+	error = secured_fw_initialize_bluetooth(device_name);
 	if(error != 0) {
 		ret = -2;
 		goto error_end_without_socket;
@@ -262,7 +317,7 @@ int main(int argc, char *argv[])
 	ALOGD("succeed in rkf_initialize_bluetooth()\n");
 
 	// Listen connection
-	error = rkf_listen_connection();
+	error = secured_fw_listen_connection();
 	if(error != 0) {
 		ret = -3;
 		goto error_end_with_socket;
@@ -275,10 +330,10 @@ int main(int argc, char *argv[])
 
 error_end_with_socket:
 	// Finalized bluetooth
-	rkf_finalize_bluetooth_socket();
+	secured_fw_finalize_bluetooth_socket();
 
 error_end_without_socket:
-	rkf_finalize_bluetooth();
+	secured_fw_finalize_bluetooth();
 	return ret;
 }
 
